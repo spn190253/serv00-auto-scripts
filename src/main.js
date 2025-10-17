@@ -225,6 +225,25 @@ async function checkLoginSuccess(page) {
             // 填充登录表单
             await fillLoginForm(page, username, password);
 
+            // 调试：输出表单信息
+            const formInfo = await page.evaluate(() => {
+                const form = document.querySelector('form');
+                if (form) {
+                    return {
+                        action: form.action,
+                        method: form.method,
+                        html: form.outerHTML.substring(0, 1000),
+                        inputs: Array.from(form.querySelectorAll('input')).map(i => ({
+                            name: i.name,
+                            type: i.type,
+                            value: i.value
+                        }))
+                    };
+                }
+                return null;
+            });
+            console.log('表单信息:', JSON.stringify(formInfo, null, 2));
+
             // 点击登录按钮
             await clickLoginButton(page);
 
