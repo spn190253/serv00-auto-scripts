@@ -85,6 +85,19 @@ async function fillLoginForm(page, username, password) {
     await page.type(passwordSelector, password, { delay: 50 });
     console.log('密码已填充');
     await delayTime(300);
+
+    // 查询所有表单并找到登录表单
+    const allForms = await page.evaluate(() => {
+        return Array.from(document.querySelectorAll('form')).map((form, idx) => ({
+            index: idx,
+            action: form.action,
+            method: form.method,
+            id: form.id,
+            class: form.className,
+            inputCount: form.querySelectorAll('input').length
+        }));
+    });
+    console.log('页面上所有的表单:', JSON.stringify(allForms, null, 2));
 }
 
 async function clickLoginButton(page) {
@@ -92,31 +105,41 @@ async function clickLoginButton(page) {
     
     try {
         await page.evaluate(() => {
-            // 方法1: 尝试提交表单
-            const form = document.querySelector('form');
-            if (form) {
-                console.log('找到表单，调用 submit()');
-                form.submit();
+            // 找到所有表单，选择不是语言切换的那个
+            const forms = document.querySelectorAll('form');
+            let loginForm = null;
+            
+            for (const form of forms) {
+                // 跳过语言切换表单
+                if (form.action.includes('/lang/') || form.getAttribute('data-language-form')) {
+                    continue;
+                }
+                // 找到包含用户名/密码的表单
+                if (form.querySelector('input[name="login"], input[name="username"], #id_username')) {
+                    loginForm = form;
+                    break;
+                }
+            }
+            
+            if (loginForm) {
+                console.log('找到登录表单，调用 submit()');
+                loginForm.submit();
                 return;
             }
             
-            // 方法2: 尝试点击按钮
+            // 后备方案：找任何 submit 按钮并点击
             const btn = document.querySelector('button[type="submit"]');
             if (btn) {
-                console.log('通过 evaluate 点击 submit 按钮');
-                btn.click();
-                return;
+                // 确保这个按钮不在语言表单里
+                const form = btn.closest('form');
+                if (form && !form.action.includes('/lang/')) {
+                    console.log('找到登录按钮，点击');
+                    btn.click();
+                    return;
+                }
             }
             
-            // 方法3: 点击任意按钮
-            const anyBtn = document.querySelector('button');
-            if (anyBtn) {
-                console.log('通过 evaluate 点击任意按钮');
-                anyBtn.click();
-                return;
-            }
-            
-            throw new Error('找不到任何提交方式');
+            throw new Error('找不到登录表单或登录按钮');
         });
         console.log('登录表单已提交');
         return true;
@@ -224,25 +247,6 @@ async function checkLoginSuccess(page) {
 
             // 填充登录表单
             await fillLoginForm(page, username, password);
-
-            // 调试：输出表单信息
-            const formInfo = await page.evaluate(() => {
-                const form = document.querySelector('form');
-                if (form) {
-                    return {
-                        action: form.action,
-                        method: form.method,
-                        html: form.outerHTML.substring(0, 1000),
-                        inputs: Array.from(form.querySelectorAll('input')).map(i => ({
-                            name: i.name,
-                            type: i.type,
-                            value: i.value
-                        }))
-                    };
-                }
-                return null;
-            });
-            console.log('表单信息:', JSON.stringify(formInfo, null, 2));
 
             // 点击登录按钮
             await clickLoginButton(page);
