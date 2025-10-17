@@ -70,16 +70,18 @@ async function fillLoginForm(page, username, password) {
         throw new Error('无法找到密码输入框');
     }
 
-    // 使用 page.type 直接输入（会自动清空）
-    await page.focus(usernameSelector);
-    await page.keyboard.press('Control+A');
+    // 清空并填充用户名
+    await page.evaluate((selector) => {
+        document.querySelector(selector).value = '';
+    }, usernameSelector);
     await page.type(usernameSelector, username, { delay: 50 });
     console.log('用户名已填充');
     await delayTime(300);
 
-    // 填充密码
-    await page.focus(passwordSelector);
-    await page.keyboard.press('Control+A');
+    // 清空并填充密码
+    await page.evaluate((selector) => {
+        document.querySelector(selector).value = '';
+    }, passwordSelector);
     await page.type(passwordSelector, password, { delay: 50 });
     console.log('密码已填充');
     await delayTime(300);
