@@ -33,16 +33,17 @@ async function fillLoginForm(page, username, password) {
         'input[type="text"]',
     ];
 
-    let usernameInput = null;
+    let usernameSelector = null;
     for (const selector of usernameSelectors) {
-        usernameInput = await page.$(selector);
-        if (usernameInput) {
+        const exists = await page.$(selector);
+        if (exists) {
             console.log(`找到用户名输入框: ${selector}`);
+            usernameSelector = selector;
             break;
         }
     }
 
-    if (!usernameInput) {
+    if (!usernameSelector) {
         throw new Error('无法找到用户名输入框');
     }
 
@@ -53,30 +54,38 @@ async function fillLoginForm(page, username, password) {
         'input[type="password"]',
     ];
 
-    let passwordInput = null;
+    let passwordSelector = null;
     for (const selector of passwordSelectors) {
-        passwordInput = await page.$(selector);
-        if (passwordInput) {
+        const exists = await page.$(selector);
+        if (exists) {
             console.log(`找到密码输入框: ${selector}`);
+            passwordSelector = selector;
             break;
         }
     }
 
-    if (!passwordInput) {
+    if (!passwordSelector) {
         throw new Error('无法找到密码输入框');
     }
 
     // 清空并填充用户名
-    await usernameInput.click({ clickCount: 3 });
-    await usernameInput.press('Backspace');
-    await page.type(await page.evaluate(el => el.getAttribute('name') ? `input[name="${el.getAttribute('name')}"]` : '#id_username', usernameInput), username);
-
-    // 直接在输入框中输入
-    await usernameInput.type(username);
+    await page.click(usernameSelector);
+    await page.keyboard.press('End');
+    await page.keyboard.down('Shift');
+    await page.keyboard.press('Home');
+    await page.keyboard.up('Shift');
+    await page.keyboard.press('Backspace');
+    await page.type(usernameSelector, username);
     await delayTime(300);
 
     // 填充密码
-    await passwordInput.type(password);
+    await page.click(passwordSelector);
+    await page.keyboard.press('End');
+    await page.keyboard.down('Shift');
+    await page.keyboard.press('Home');
+    await page.keyboard.up('Shift');
+    await page.keyboard.press('Backspace');
+    await page.type(passwordSelector, password);
     await delayTime(300);
 }
 
@@ -85,34 +94,38 @@ async function findAndClickLoginButton(page) {
     const buttonSelectors = [
         '#submit',
         'button[type="submit"]',
-        'button:has-text("Zaloguj")',
-        'button:has-text("Login")',
-        'button:nth-child(1)',
+        'button',
     ];
 
     for (const selector of buttonSelectors) {
         try {
-            const button = await page.$(selector);
-            if (button) {
-                console.log(`找到登录按钮: ${selector}`);
-                await button.click();
+            const buttons = await page.$(selector);
+            if (buttons && buttons.length > 0) {
+                console.log(`找到 ${buttons.length} 个按钮，选择第一个: ${selector}`);
+                // 使用 evaluate 来点击按钮，这是最可靠的方式
+                await page.evaluate(() => {
+                    const btn = document.querySelector('button[type="submit"]') || document.querySelector('button');
+                    if (btn) btn.click();
+                });
                 return true;
             }
         } catch (e) {
-            // 继续尝试下一个选择器
+            console.error(`尝试点击按钮失败: ${e.message}`);
         }
     }
 
     // 如果上述都失败，尝试通过XPath
     try {
-        const button = await page.$x('//button[contains(., "Zaloguj") or contains(., "Login")]');
+        const button = await page.$x('//button');
         if (button.length > 0) {
-            console.log('通过XPath找到登录按钮');
-            await button[0].click();
+            console.log(`通过XPath找到登录按钮，共${button.length}个`);
+            await page.evaluate(() => {
+                document.querySelector('button').click();
+            });
             return true;
         }
     } catch (e) {
-        // 继续
+        console.error(`XPath查询失败: ${e.message}`);
     }
 
     throw new Error('无法找到登录按钮');
@@ -186,11 +199,15 @@ async function checkLoginSuccess(page) {
 
             // 等待页面导航或加载
             try {
-                await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+                await Promise.race([
+                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }),
+                    delayTime(8000)
+                ]);
             } catch (e) {
-                console.log('页面导航超时，继续检查登录状态...');
-                await delayTime(2000);
+                console.log('页面导航超时或已完成，继续检查登录状态...');
             }
+            
+            await delayTime(2000);
 
             // 检查是否登录成功
             const isLoggedIn = await checkLoginSuccess(page);
