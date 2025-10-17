@@ -133,22 +133,39 @@ async function checkLoginSuccess(page) {
             return true;
         }
 
-        // 方法3: 检查是否存在错误消息
-        const errorMsg = await page.evaluate(() => {
+        // 方法3: 获取页面内容进行诊断
+        const pageInfo = await page.evaluate(() => {
             const errorElements = document.querySelectorAll('.error, .alert-danger, [class*="error"], [class*="fail"], [class*="invalid"]');
-            if (errorElements.length > 0) {
-                return errorElements[0].textContent;
-            }
-            return null;
+            const bodyText = document.body.innerText.substring(0, 500);
+            const formPresent = document.querySelector('form') !== null;
+            const loginInputs = document.querySelectorAll('input[type="text"], input[type="password"]');
+            
+            return {
+                hasError: errorElements.length > 0,
+                errorText: errorElements.length > 0 ? errorElements[0].textContent : null,
+                formPresent: formPresent,
+                inputCount: loginInputs.length,
+                bodyPreview: bodyText
+            };
         });
 
-        if (errorMsg) {
-            console.log(`✗ 检测到错误消息: ${errorMsg}`);
+        console.log(`页面诊断信息:`);
+        console.log(`  - 表单存在: ${pageInfo.formPresent}`);
+        console.log(`  - 输入框数量: ${pageInfo.inputCount}`);
+        console.log(`  - 有错误消息: ${pageInfo.hasError}`);
+        if (pageInfo.errorText) {
+            console.log(`  - 错误内容: ${pageInfo.errorText}`);
             return false;
         }
 
-        console.log('? 未能确定登录状态');
-        return false;
+        // 如果登录表单仍然存在，说明登录失败
+        if (pageInfo.formPresent && pageInfo.inputCount > 0) {
+            console.log('✗ 登录表单仍然存在，登录失败');
+            return false;
+        }
+
+        console.log('? 未能确定登录状态（假设成功）');
+        return true;
     } catch (e) {
         console.error(`检查登录状态异常: ${e.message}`);
         return false;
