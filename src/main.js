@@ -24,6 +24,8 @@ async function sendTelegramMessage(token, chatId, message) {
 }
 
 async function fillLoginForm(page, username, password) {
+    console.log('开始填充登录表单...');
+    
     // 尝试多个选择器来找到用户名输入框
     const usernameSelectors = [
         '#id_username',
@@ -68,116 +70,80 @@ async function fillLoginForm(page, username, password) {
         throw new Error('无法找到密码输入框');
     }
 
-    // 清空并填充用户名
-    await page.click(usernameSelector);
-    await page.keyboard.press('End');
-    await page.keyboard.down('Shift');
-    await page.keyboard.press('Home');
-    await page.keyboard.up('Shift');
-    await page.keyboard.press('Backspace');
-    await page.type(usernameSelector, username);
+    // 使用 page.type 直接输入（会自动清空）
+    await page.focus(usernameSelector);
+    await page.keyboard.press('Control+A');
+    await page.type(usernameSelector, username, { delay: 50 });
+    console.log('用户名已填充');
     await delayTime(300);
 
     // 填充密码
-    await page.click(passwordSelector);
-    await page.keyboard.press('End');
-    await page.keyboard.down('Shift');
-    await page.keyboard.press('Home');
-    await page.keyboard.up('Shift');
-    await page.keyboard.press('Backspace');
-    await page.type(passwordSelector, password);
+    await page.focus(passwordSelector);
+    await page.keyboard.press('Control+A');
+    await page.type(passwordSelector, password, { delay: 50 });
+    console.log('密码已填充');
     await delayTime(300);
 }
 
-async function findAndClickLoginButton(page) {
-    // 尝试多个选择器来找到登录按钮
-    const buttonSelectors = [
-        '#submit',
-        'button[type="submit"]',
-        'button',
-    ];
-
-    for (const selector of buttonSelectors) {
-        try {
-            const buttons = await page.$(selector);
-            if (buttons && buttons.length > 0) {
-                console.log(`找到 ${buttons.length} 个按钮，选择第一个: ${selector}`);
-                // 使用 evaluate 来点击按钮，这是最可靠的方式
-                await page.evaluate(() => {
-                    const btn = document.querySelector('button[type="submit"]') || document.querySelector('button');
-                    if (btn) btn.click();
-                });
-                return true;
-            }
-        } catch (e) {
-            console.error(`尝试点击按钮失败: ${e.message}`);
-        }
-    }
-
-    // 如果上述都失败，尝试通过XPath
+async function clickLoginButton(page) {
+    console.log('尝试点击登录按钮...');
+    
     try {
-        const button = await page.$x('//button');
-        if (button.length > 0) {
-            console.log(`通过XPath找到登录按钮，共${button.length}个`);
-            await page.evaluate(() => {
-                document.querySelector('button').click();
-            });
-            return true;
+        const hasButton = await page.$('button[type="submit"]');
+        if (hasButton) {
+            console.log('找到 submit 按钮，进行点击');
+            await page.click('button[type="submit"]');
+        } else {
+            console.log('未找到 submit 按钮，尝试点击任何按钮');
+            await page.click('button');
         }
+        console.log('登录按钮已点击');
+        return true;
     } catch (e) {
-        console.error(`XPath查询失败: ${e.message}`);
+        console.error(`点击按钮异常: ${e.message}`);
+        throw new Error(`无法点击登录按钮: ${e.message}`);
     }
-
-    throw new Error('无法找到登录按钮');
 }
 
 async function checkLoginSuccess(page) {
-    // 方法1: 检查是否存在登出链接
-    const hasLogoutLink = await page.evaluate(() => {
-        return document.querySelector('a[href="/logout/"]') !== null;
-    });
+    console.log('检查登录状态...');
+    
+    try {
+        // 方法1: 检查是否存在登出链接
+        const hasLogoutLink = await page.$('a[href="/logout/"]');
+        if (hasLogoutLink) {
+            console.log('✓ 检测到登出链接，登录成功');
+            return true;
+        }
 
-    if (hasLogoutLink) {
-        console.log('检测到登出链接，登录成功');
-        return true;
-    }
+        // 方法2: 检查URL是否改变（不在登录页面）
+        const currentUrl = page.url();
+        console.log(`当前URL: ${currentUrl}`);
+        if (!currentUrl.includes('login')) {
+            console.log('✓ 已离开登录页面，登录成功');
+            return true;
+        }
 
-    // 方法2: 检查URL是否改变（不在登录页面）
-    const currentUrl = page.url();
-    console.log(`当前URL: ${currentUrl}`);
-    if (!currentUrl.includes('login')) {
-        console.log('已离开登录页面，登录成功');
-        return true;
-    }
+        // 方法3: 检查是否存在错误消息
+        const errorMsg = await page.evaluate(() => {
+            const errorElements = document.querySelectorAll('.error, .alert-danger, [class*="error"], [class*="fail"], [class*="invalid"]');
+            if (errorElements.length > 0) {
+                return errorElements[0].textContent;
+            }
+            return null;
+        });
 
-    // 方法3: 检查是否存在用户信息或欢迎文字
-    const hasUserInfo = await page.evaluate(() => {
-        const userElements = document.querySelectorAll('[class*="user"], [class*="profile"], [class*="account"]');
-        return userElements.length > 0;
-    });
+        if (errorMsg) {
+            console.log(`✗ 检测到错误消息: ${errorMsg}`);
+            return false;
+        }
 
-    if (hasUserInfo) {
-        console.log('检测到用户信息元素，登录成功');
-        return true;
-    }
-
-    // 方法4: 检查是否存在错误消息
-    const errorInfo = await page.evaluate(() => {
-        const errorElements = document.querySelectorAll('.error, .alert-danger, [class*="error"], [class*="fail"], [class*="invalid"]');
-        return {
-            hasError: errorElements.length > 0,
-            count: errorElements.length,
-            text: errorElements.length > 0 ? errorElements[0].textContent : ''
-        };
-    });
-
-    if (errorInfo.hasError) {
-        console.log(`检测到错误消息: ${errorInfo.text}`);
+        console.log('? 未能确定登录状态');
+        return false;
+    } catch (e) {
+        console.error(`检查登录状态异常: ${e.message}`);
         return false;
     }
-
-    console.log('未能确定登录状态，假设登录失败');
-    return false;
 }
 
 (async () => {
@@ -202,7 +168,9 @@ async function checkLoginSuccess(page) {
         }
 
         const url = `https://${panel}/login/?next=/`;
-        console.log(`\n尝试登录账号 ${username}，地址: ${url}`);
+        console.log(`\n========================================`);
+        console.log(`尝试登录账号 ${username}，地址: ${url}`);
+        console.log(`========================================`);
 
         const browser = await puppeteer.launch({
             headless: true,
@@ -213,22 +181,24 @@ async function checkLoginSuccess(page) {
 
         try {
             await page.goto(url, { waitUntil: 'networkidle2' });
-            await delayTime(1000); // 等待页面完全加载
+            console.log('页面加载完成');
+            await delayTime(1000);
 
             // 填充登录表单
             await fillLoginForm(page, username, password);
 
             // 点击登录按钮
-            await findAndClickLoginButton(page);
+            await clickLoginButton(page);
 
-            // 等待页面导航或加载
+            // 等待响应
+            console.log('等待登录响应...');
             try {
                 await Promise.race([
-                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }),
+                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => {}),
                     delayTime(8000)
                 ]);
             } catch (e) {
-                console.log('页面导航超时或已完成，继续检查登录状态...');
+                console.log('导航等待完成或超时');
             }
             
             await delayTime(2000);
@@ -244,11 +214,11 @@ async function checkLoginSuccess(page) {
 
             loginResults.push(`账号（${username}）（${serverName}）${status}`);
 
-            console.log(`账号 ${username} 于北京时间 ${nowBeijing}（UTC时间 ${nowUtc}）${status}`);
+            console.log(`\n✓ 账号 ${username} 于北京时间 ${nowBeijing}（UTC时间 ${nowUtc}）${status}`);
         } catch (error) {
             const serverName = domain === "ct8.pl" ? "ct8" : `serv00-${panelnum}`;
             loginResults.push(`账号（${username}）（${serverName}）登录时出现错误: ${error.message}`);
-            console.error(`账号 ${username} 登录时出现错误: ${error.message}`);
+            console.error(`\n✗ 账号 ${username} 登录时出现错误: ${error.message}`);
         } finally {
             await page.close();
             await browser.close();
@@ -262,7 +232,9 @@ async function checkLoginSuccess(page) {
     const reportContent = loginResults.join('\n');
     const finalReport = `${reportTitle}\n${reportContent}`;
 
-    console.log('\n' + finalReport);
+    console.log('\n' + '='.repeat(50));
+    console.log(finalReport);
+    console.log('='.repeat(50));
 
     if (telegramToken && telegramChatId) {
         await sendTelegramMessage(telegramToken, telegramChatId, finalReport);
