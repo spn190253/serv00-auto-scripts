@@ -88,29 +88,41 @@ async function fillLoginForm(page, username, password) {
 }
 
 async function clickLoginButton(page) {
-    console.log('尝试点击登录按钮...');
+    console.log('尝试提交登录表单...');
     
     try {
         await page.evaluate(() => {
+            // 方法1: 尝试提交表单
+            const form = document.querySelector('form');
+            if (form) {
+                console.log('找到表单，调用 submit()');
+                form.submit();
+                return;
+            }
+            
+            // 方法2: 尝试点击按钮
             const btn = document.querySelector('button[type="submit"]');
             if (btn) {
                 console.log('通过 evaluate 点击 submit 按钮');
                 btn.click();
-            } else {
-                const anyBtn = document.querySelector('button');
-                if (anyBtn) {
-                    console.log('通过 evaluate 点击任意按钮');
-                    anyBtn.click();
-                } else {
-                    throw new Error('找不到任何按钮元素');
-                }
+                return;
             }
+            
+            // 方法3: 点击任意按钮
+            const anyBtn = document.querySelector('button');
+            if (anyBtn) {
+                console.log('通过 evaluate 点击任意按钮');
+                anyBtn.click();
+                return;
+            }
+            
+            throw new Error('找不到任何提交方式');
         });
-        console.log('登录按钮已点击');
+        console.log('登录表单已提交');
         return true;
     } catch (e) {
-        console.error(`点击按钮异常: ${e.message}`);
-        throw new Error(`无法点击登录按钮: ${e.message}`);
+        console.error(`提交表单异常: ${e.message}`);
+        throw new Error(`无法提交登录表单: ${e.message}`);
     }
 }
 
@@ -216,18 +228,21 @@ async function checkLoginSuccess(page) {
             // 点击登录按钮
             await clickLoginButton(page);
 
-            // 等待响应
+            // 等待响应（重要）
             console.log('等待登录响应...');
+            let navigationSucceeded = false;
             try {
-                await Promise.race([
-                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => {}),
-                    delayTime(8000)
-                ]);
+                await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 8000 }).then(() => {
+                    navigationSucceeded = true;
+                }).catch(() => {
+                    // 导航失败或超时，继续
+                });
             } catch (e) {
-                console.log('导航等待完成或超时');
+                console.log('导航等待出错，继续...');
             }
             
-            await delayTime(2000);
+            // 即使导航失败，也等待一下
+            await delayTime(3000);
 
             // 检查是否登录成功
             const isLoggedIn = await checkLoginSuccess(page);
