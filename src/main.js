@@ -138,22 +138,46 @@ async function checkLoginSuccess(page) {
     });
 
     if (hasLogoutLink) {
+        console.log('检测到登出链接，登录成功');
         return true;
     }
 
     // 方法2: 检查URL是否改变（不在登录页面）
     const currentUrl = page.url();
+    console.log(`当前URL: ${currentUrl}`);
     if (!currentUrl.includes('login')) {
+        console.log('已离开登录页面，登录成功');
         return true;
     }
 
-    // 方法3: 检查是否存在错误消息
-    const hasError = await page.evaluate(() => {
-        const errorElements = document.querySelectorAll('.error, .alert-danger, [class*="error"], [class*="fail"]');
-        return errorElements.length > 0;
+    // 方法3: 检查是否存在用户信息或欢迎文字
+    const hasUserInfo = await page.evaluate(() => {
+        const userElements = document.querySelectorAll('[class*="user"], [class*="profile"], [class*="account"]');
+        return userElements.length > 0;
     });
 
-    return !hasError;
+    if (hasUserInfo) {
+        console.log('检测到用户信息元素，登录成功');
+        return true;
+    }
+
+    // 方法4: 检查是否存在错误消息
+    const errorInfo = await page.evaluate(() => {
+        const errorElements = document.querySelectorAll('.error, .alert-danger, [class*="error"], [class*="fail"], [class*="invalid"]');
+        return {
+            hasError: errorElements.length > 0,
+            count: errorElements.length,
+            text: errorElements.length > 0 ? errorElements[0].textContent : ''
+        };
+    });
+
+    if (errorInfo.hasError) {
+        console.log(`检测到错误消息: ${errorInfo.text}`);
+        return false;
+    }
+
+    console.log('未能确定登录状态，假设登录失败');
+    return false;
 }
 
 (async () => {
