@@ -91,14 +91,21 @@ async function clickLoginButton(page) {
     console.log('尝试点击登录按钮...');
     
     try {
-        const hasButton = await page.$('button[type="submit"]');
-        if (hasButton) {
-            console.log('找到 submit 按钮，进行点击');
-            await page.click('button[type="submit"]');
-        } else {
-            console.log('未找到 submit 按钮，尝试点击任何按钮');
-            await page.click('button');
-        }
+        await page.evaluate(() => {
+            const btn = document.querySelector('button[type="submit"]');
+            if (btn) {
+                console.log('通过 evaluate 点击 submit 按钮');
+                btn.click();
+            } else {
+                const anyBtn = document.querySelector('button');
+                if (anyBtn) {
+                    console.log('通过 evaluate 点击任意按钮');
+                    anyBtn.click();
+                } else {
+                    throw new Error('找不到任何按钮元素');
+                }
+            }
+        });
         console.log('登录按钮已点击');
         return true;
     } catch (e) {
