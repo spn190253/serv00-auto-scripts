@@ -24,8 +24,6 @@ async function sendTelegramMessage(token, chatId, message) {
 }
 
 async function fillLoginForm(page, username, password) {
-    console.log('开始填充登录表单...');
-    
     // 尝试多个选择器来找到用户名输入框
     const usernameSelectors = [
         '#id_username',
@@ -39,7 +37,6 @@ async function fillLoginForm(page, username, password) {
     for (const selector of usernameSelectors) {
         const exists = await page.$(selector);
         if (exists) {
-            console.log(`找到用户名输入框: ${selector}`);
             usernameSelector = selector;
             break;
         }
@@ -60,7 +57,6 @@ async function fillLoginForm(page, username, password) {
     for (const selector of passwordSelectors) {
         const exists = await page.$(selector);
         if (exists) {
-            console.log(`找到密码输入框: ${selector}`);
             passwordSelector = selector;
             break;
         }
@@ -74,35 +70,16 @@ async function fillLoginForm(page, username, password) {
     await page.evaluate((selector) => {
         document.querySelector(selector).value = '';
     }, usernameSelector);
-    await page.type(usernameSelector, username, { delay: 50 });
-    console.log('用户名已填充');
-    await delayTime(300);
+    await page.type(usernameSelector, username, { delay: 30 });
 
     // 清空并填充密码
     await page.evaluate((selector) => {
         document.querySelector(selector).value = '';
     }, passwordSelector);
-    await page.type(passwordSelector, password, { delay: 50 });
-    console.log('密码已填充');
-    await delayTime(300);
-
-    // 查询所有表单并找到登录表单
-    const allForms = await page.evaluate(() => {
-        return Array.from(document.querySelectorAll('form')).map((form, idx) => ({
-            index: idx,
-            action: form.action,
-            method: form.method,
-            id: form.id,
-            class: form.className,
-            inputCount: form.querySelectorAll('input').length
-        }));
-    });
-    console.log('页面上所有的表单:', JSON.stringify(allForms, null, 2));
+    await page.type(passwordSelector, password, { delay: 30 });
 }
 
 async function clickLoginButton(page) {
-    console.log('尝试提交登录表单...');
-    
     try {
         await page.evaluate(() => {
             // 找到所有表单，选择不是语言切换的那个
@@ -122,7 +99,6 @@ async function clickLoginButton(page) {
             }
             
             if (loginForm) {
-                console.log('找到登录表单，调用 submit()');
                 loginForm.submit();
                 return;
             }
@@ -130,10 +106,8 @@ async function clickLoginButton(page) {
             // 后备方案：找任何 submit 按钮并点击
             const btn = document.querySelector('button[type="submit"]');
             if (btn) {
-                // 确保这个按钮不在语言表单里
                 const form = btn.closest('form');
                 if (form && !form.action.includes('/lang/')) {
-                    console.log('找到登录按钮，点击');
                     btn.click();
                     return;
                 }
@@ -141,68 +115,36 @@ async function clickLoginButton(page) {
             
             throw new Error('找不到登录表单或登录按钮');
         });
-        console.log('登录表单已提交');
-        return true;
     } catch (e) {
-        console.error(`提交表单异常: ${e.message}`);
         throw new Error(`无法提交登录表单: ${e.message}`);
     }
 }
 
 async function checkLoginSuccess(page) {
-    console.log('检查登录状态...');
-    
     try {
         // 方法1: 检查是否存在登出链接
         const hasLogoutLink = await page.$('a[href="/logout/"]');
         if (hasLogoutLink) {
-            console.log('✓ 检测到登出链接，登录成功');
             return true;
         }
 
         // 方法2: 检查URL是否改变（不在登录页面）
         const currentUrl = page.url();
-        console.log(`当前URL: ${currentUrl}`);
         if (!currentUrl.includes('login')) {
-            console.log('✓ 已离开登录页面，登录成功');
             return true;
         }
 
-        // 方法3: 获取页面内容进行诊断
-        const pageInfo = await page.evaluate(() => {
+        // 方法3: 检查是否存在错误消息
+        const errorMsg = await page.evaluate(() => {
             const errorElements = document.querySelectorAll('.error, .alert-danger, [class*="error"], [class*="fail"], [class*="invalid"]');
-            const bodyText = document.body.innerText.substring(0, 500);
-            const formPresent = document.querySelector('form') !== null;
-            const loginInputs = document.querySelectorAll('input[type="text"], input[type="password"]');
-            
-            return {
-                hasError: errorElements.length > 0,
-                errorText: errorElements.length > 0 ? errorElements[0].textContent : null,
-                formPresent: formPresent,
-                inputCount: loginInputs.length,
-                bodyPreview: bodyText
-            };
+            if (errorElements.length > 0) {
+                return errorElements[0].textContent;
+            }
+            return null;
         });
 
-        console.log(`页面诊断信息:`);
-        console.log(`  - 表单存在: ${pageInfo.formPresent}`);
-        console.log(`  - 输入框数量: ${pageInfo.inputCount}`);
-        console.log(`  - 有错误消息: ${pageInfo.hasError}`);
-        if (pageInfo.errorText) {
-            console.log(`  - 错误内容: ${pageInfo.errorText}`);
-            return false;
-        }
-
-        // 如果登录表单仍然存在，说明登录失败
-        if (pageInfo.formPresent && pageInfo.inputCount > 0) {
-            console.log('✗ 登录表单仍然存在，登录失败');
-            return false;
-        }
-
-        console.log('? 未能确定登录状态（假设成功）');
-        return true;
+        return !errorMsg;
     } catch (e) {
-        console.error(`检查登录状态异常: ${e.message}`);
         return false;
     }
 }
@@ -218,7 +160,9 @@ async function checkLoginSuccess(page) {
 
     const loginResults = [];
 
-    for (const account of accounts) {
+    // 2个并行登录（平衡速度和安全）
+    const concurrency = 2;
+    const loginTasks = accounts.map((account, idx) => async () => {
         const { username, password, panelnum, domain } = account;
 
         let panel;
@@ -229,9 +173,7 @@ async function checkLoginSuccess(page) {
         }
 
         const url = `https://${panel}/login/?next=/`;
-        console.log(`\n========================================`);
-        console.log(`尝试登录账号 ${username}，地址: ${url}`);
-        console.log(`========================================`);
+        console.log(`[${idx + 1}/${accounts.length}] 登录 ${username}`);
 
         const browser = await puppeteer.launch({
             headless: true,
@@ -241,9 +183,7 @@ async function checkLoginSuccess(page) {
         const page = await browser.newPage();
 
         try {
-            await page.goto(url, { waitUntil: 'networkidle2' });
-            console.log('页面加载完成');
-            await delayTime(1000);
+            await page.goto(url, { waitUntil: 'domcontentloaded' });
 
             // 填充登录表单
             await fillLoginForm(page, username, password);
@@ -251,42 +191,45 @@ async function checkLoginSuccess(page) {
             // 点击登录按钮
             await clickLoginButton(page);
 
-            // 等待响应（重要）
-            console.log('等待登录响应...');
-            let navigationSucceeded = false;
+            // 等待响应
             try {
-                await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 8000 }).then(() => {
-                    navigationSucceeded = true;
-                }).catch(() => {
-                    // 导航失败或超时，继续
-                });
+                await Promise.race([
+                    page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 5000 }).catch(() => {}),
+                    delayTime(4000)
+                ]);
             } catch (e) {
-                console.log('导航等待出错，继续...');
+                // 继续
             }
             
-            // 即使导航失败，也等待一下
-            await delayTime(3000);
+            await delayTime(300);
 
             // 检查是否登录成功
             const isLoggedIn = await checkLoginSuccess(page);
 
-            const nowUtc = formatToISO(new Date());
-            const nowBeijing = formatToISO(new Date(new Date().getTime() + 8 * 60 * 60 * 1000));
-
             const serverName = domain === "ct8.pl" ? "ct8" : `serv00-${panelnum}`;
-            const status = isLoggedIn ? "登录成功" : "登录失败";
+            const status = isLoggedIn ? "✓" : "✗";
 
-            loginResults.push(`账号（${username}）（${serverName}）${status}`);
+            loginResults.push(`账号（${username}）（${serverName}）${isLoggedIn ? "登录成功" : "登录失败"}`);
 
-            console.log(`\n✓ 账号 ${username} 于北京时间 ${nowBeijing}（UTC时间 ${nowUtc}）${status}`);
+            console.log(`[${idx + 1}/${accounts.length}] ${status} ${username}`);
         } catch (error) {
             const serverName = domain === "ct8.pl" ? "ct8" : `serv00-${panelnum}`;
             loginResults.push(`账号（${username}）（${serverName}）登录时出现错误: ${error.message}`);
-            console.error(`\n✗ 账号 ${username} 登录时出现错误: ${error.message}`);
+            console.error(`[${idx + 1}/${accounts.length}] ✗ ${username} 出错: ${error.message}`);
         } finally {
             await page.close();
             await browser.close();
-            const delay = Math.floor(Math.random() * 5000) + 1000;
+        }
+    });
+
+    // 分批执行（2个并行）
+    for (let i = 0; i < loginTasks.length; i += concurrency) {
+        const batch = loginTasks.slice(i, i + concurrency);
+        await Promise.all(batch.map(task => task()));
+        
+        // 批次之间随机延迟 1-2秒
+        if (i + concurrency < loginTasks.length) {
+            const delay = Math.random() * 1000 + 1000;
             await delayTime(delay);
         }
     }
