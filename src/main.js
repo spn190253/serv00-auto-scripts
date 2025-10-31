@@ -1,32 +1,4 @@
-async function loginWithRetry(account, idx, totalCount, maxRetries = 2) {
-    const { username, password, panelnum, domain } = account;
-    
-    let panel;
-    if (domain === "ct8.pl") {
-        panel = `panel.${domain}`;
-    } else {
-        panel = `${panelBaseUrl}${panelnum}.${domain || defaultDomain}`;
-    }
-    
-    const url = `https://${panel}/login/?next=/`;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        const browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-        });
-        const page = await browser.newPage();
-        
-        try {
-            console.log(`[${idx + 1}/${totalCount}] 登录 ${username}${attempt > 1 ? ` (重试 ${attempt}/${maxRetries})` : ''}`);
-            
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-            await delayTime(1000); // 确保页面完全加载
-            
-            // 填充登录表单
-            await fillLoginForm(page, username, password);
-            await delayTime(500);import fs from 'fs';
+import fs from 'fs';
 import path from 'path';
 import puppeteer from 'puppeteer';
 import axios from 'axios';
